@@ -24,6 +24,7 @@ import {
     scan,
     switchMap,
     take,
+    merge,
 } from "rxjs";
 import { fromFetch } from "rxjs/fetch";
 
@@ -174,17 +175,62 @@ const render = (): ((s: State) => void) => {
     };
 };
 
+
+// Update State for Bird Movemenent
 export const state$ = (csvContents: string): Observable<State> => {
     /** User input */
 
+    // Create an observable for key presses (spacebar to flap)
     const key$ = fromEvent<KeyboardEvent>(document, "keypress");
-    const fromKey = (keyCode: Key) =>
-        key$.pipe(filter(({ code }) => code === keyCode));
+    const flap$ = key$.pipe(
+        filter(({ code }) => code === "Space"),
+        map(() => -8) // Flap gives upward velocity
+    );
 
     /** Determines the rate of time steps */
-    const tick$ = interval(Constants.TICK_RATE_MS);
+    const tick$ = interval(Constants.TICK_RATE_MS).pipe(
+        map(() => 1) // Each tick applies a downward force of gravity (1)
+    );
 
-    return tick$.pipe(scan((s: State) => ({ gameEnd: false }), initialState));
+    // Merge flap inputs and gravity ticks
+    const movement$ = merge(
+        flap$.pipe(map(vy => ({ type: "flap", vy }))), // flap: direct velocity change 
+        tick$.pipe(map(() => ({ type: "gravity", vy: 1 }))) // gravity: adds downward velocity (tick will change velocity)
+    );
+
+    // Initial state with birdY and vy
+    const initialBirdState = {
+        ...initialState, // spread operator to keep the initial state of bird
+        birdY: 200, // Start in the middle of the screen
+        vy: 0 // velocity starts at 0
+    };
+
+    return movement$.pipe( // state changes now (over time)
+        scan((state: any, event: any) => {
+            let vy = state.vy; // vy is state with current velocity
+            vy = event.type === "flap"
+                ? event.vy // If flap, set upward velocity
+            : event.type === "gravity"
+                ? vy + event.vy // If gravity, add gravity effect 
+                // event.vy = change in velocity coming from gravity event 
+                //vy = birds current velocity
+            : vy; // Otherwise, keep current velocity
+            const newY = state.birdY + vy;
+
+            return {
+                ...state, // spread operator to copy all properties of state object in a new object
+                birdY: newY, // new position
+                vy, // new velocity
+                gameEnd: newY < 0 || newY > Viewport.CANVAS_HEIGHT // end game if bird hits top/bottom
+            };
+
+        }, initialBirdState), // start from initial bird state
+        map((state: any) => ({ // only update what is relevent for next state (where is bird vertically, is the game over?, velocity of bird)
+            gameEnd: state.gameEnd, // is game over?
+            vy: state.vy, // Keep vy for smoother animations or collisions
+            birdY: state.birdY // bird’s vertical position
+        }))
+    );
 };
 
 // The following simply runs your main function on window load.  Make sure to leave it in place.
