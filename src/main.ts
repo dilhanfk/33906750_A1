@@ -144,29 +144,7 @@ const render = (): ((s: State & { birdY: number }) => void) => {
         height: `${Birb.HEIGHT}`,
     });
     svg.appendChild(birdImg);
-
-    // --- Create pipes once ---
-    const pipeGapY = 200; // vertical center of the gap
-    const pipeGapHeight = 100;
-
-    const pipeTop = createSvgElement(svg.namespaceURI, "rect", {
-        x: "150",
-        y: "0",
-        width: `${Constants.PIPE_WIDTH}`,
-        height: `${pipeGapY - pipeGapHeight / 2}`,
-        fill: "green",
-    });
-
-    const pipeBottom = createSvgElement(svg.namespaceURI, "rect", {
-        x: "150",
-        y: `${pipeGapY + pipeGapHeight / 2}`,
-        width: `${Constants.PIPE_WIDTH}`,
-        height: `${Viewport.CANVAS_HEIGHT - (pipeGapY + pipeGapHeight / 2)}`,
-        fill: "green",
-    });
-
-    svg.appendChild(pipeTop);
-    svg.appendChild(pipeBottom);
+    
 
     // --- Return function that updates bird each tick ---
     return (s: State & { birdY: number }) => {
@@ -204,7 +182,7 @@ export const state$ = (csvContents: string): Observable<State> => {
     // Merge flap inputs and gravity ticks
     const movement$ = merge(
         flap$.pipe(map(vy => ({ type: "flap", vy }))), // flap: direct velocity change 
-        tick$.pipe(map(() => ({ type: "gravity", vy: 1 }))) // gravity: adds downward velocity (tick will change velocity)
+        tick$.pipe(map(() => ({ type: "gravity", vy: 2 }))) // gravity: adds downward velocity (tick will change velocity)
     );
 
     // Initial state with birdY and vy
@@ -242,6 +220,84 @@ export const state$ = (csvContents: string): Observable<State> => {
     );
 };
 
+type Pipe = {
+    x: number;            // current horizontal position
+    gapY: number;         // vertical start of the gap (top of gap)
+    pipeGapHeight: number; // height of the gap
+};
+
+// Constants 
+const GAP_HEIGHT = 100;  // vertical gap height
+const PIPE_SPEED = 6;    // pixels per tick
+const SPAWN_THRESHOLD = 0.7 * Viewport.CANVAS_WIDTH; // spawn new pipe after previous moves this far
+
+
+// Creates an initial pipe and continuously spawns new pipes as the previous moves left. (by spawn threshold)
+// Pipes are split into top and bottom, with a vertical gap in between.
+const animatePipes = (svg: SVGSVGElement) => {
+    // Active pipes on screen
+    const activePipes: Array<{pipe: Pipe, topElem: SVGRectElement, bottomElem: SVGRectElement}> = []; // array of active pipes on screen
+
+    // Function to create a new pipe
+    const createPipe = () => {
+        const minGapY = 20; // minimal y to keep gap on screen
+        const maxGapY = Viewport.CANVAS_HEIGHT - GAP_HEIGHT - 20; // max gap in between pipes
+        const gapY = minGapY + Math.random() * (maxGapY - minGapY); // puts a random gap of certain size for bird to go through
+
+        // Create a new pipe starting at the right edge of the screen, with a randomly determined vertical gap
+        const pipe: Pipe = { x: Viewport.CANVAS_WIDTH, gapY, pipeGapHeight: GAP_HEIGHT };
+
+        // Create top and bottom pipe elements
+        const topElem = createSvgElement(svg.namespaceURI, "rect", {
+            x: `${pipe.x}`, // Horizontal position of the pipe
+            y: "0", // Start at top of canvas
+            width: `${Constants.PIPE_WIDTH}`, // Pipe width
+            height: `${pipe.gapY}`, // Height from top to start of gap
+            fill: "green", // Pipe color
+        }) as SVGRectElement; // narrows the type 
+
+        const bottomElem = createSvgElement(svg.namespaceURI, "rect", {
+            x: `${pipe.x}`, // Horizontal position
+            y: `${pipe.gapY + pipe.pipeGapHeight}`, // Start at bottom of gap
+            width: `${Constants.PIPE_WIDTH}`, // Pipe width
+            height: `${Viewport.CANVAS_HEIGHT - (pipe.gapY + pipe.pipeGapHeight)}`, // Remaining height to bottom
+            fill: "green",  // Pipe color
+        }) as SVGRectElement;
+
+        svg.append(topElem, bottomElem); // add both pipes to SVG Canvas
+        activePipes.push({ pipe, topElem, bottomElem }); // add to active pipes list, to track.
+    };
+
+    // Spawn first pipe immediately
+    createPipe();
+
+    // Animate pipes on each tick
+    interval(Constants.TICK_RATE_MS / 2).subscribe(() => {
+        // Loop through all active pipes in reverse (so we can safely remove pipes while iterating)
+        // removing in reverse order wont affect index's for pipes yet to spawn
+        for (let i = activePipes.length - 1; i >= 0; i--) { 
+            const { pipe, topElem, bottomElem } = activePipes[i]; 
+
+            pipe.x -= PIPE_SPEED; // Move pipe left by PIPE_SPEED pixels
+
+            // Update pipe positions on screen, or remove if it has gone off the left side of screen.
+            pipe.x + Constants.PIPE_WIDTH > 0 // if pipe is still on the screen
+                ? (topElem.setAttribute("x", `${pipe.x}`), // Update the x-position of the top pipe element to match pipe.x
+                   bottomElem.setAttribute("x", `${pipe.x}`)) // Update the x-position of the bottom pipe element to match pipe.x
+                : (svg.removeChild(topElem), // remove top pipe elem from SVG Canvas
+                   svg.removeChild(bottomElem), // remove bottom pipe from SVG Canvas
+                   activePipes.splice(i, 1)); // remove the pipe from the active pipes array
+        }
+
+        // Spawn a new pipe if there are no pipes, or last pipe has moved past the spawn threshold
+        activePipes.length === 0 || activePipes[activePipes.length - 1].pipe.x < SPAWN_THRESHOLD
+            ? createPipe()
+            : null; // Do nothing otherwise
+    });
+};
+
+
+
 // The following simply runs your main function on window load.  Make sure to leave it in place.
 // You should not need to change this, beware if you are.
 if (typeof window !== "undefined") {
@@ -267,10 +323,12 @@ if (typeof window !== "undefined") {
     // Observable: wait for first user click
     const click$ = fromEvent(document.body, "mousedown").pipe(take(1));
 
-    csv$.pipe(
-        switchMap(contents =>
-            // On click - start the game
-            click$.pipe(switchMap(() => state$(contents))),
-        ),
-    ).subscribe(render());
+csv$.pipe(
+    switchMap(contents =>
+        click$.pipe(switchMap(() => {
+            animatePipes(document.querySelector("#svgCanvas") as SVGSVGElement);
+            return state$(contents);
+        })),
+    ),
+).subscribe(render());
 }
