@@ -53,10 +53,14 @@ type Key = "Space";
 
 type State = Readonly<{
     gameEnd: boolean;
+    birdY: number;
+    vy: number;
 }>;
 
 const initialState: State = {
     gameEnd: false,
+    birdY: 200, // Start in the middle of the screen
+    vy: 0       // Initial vertical velocity
 };
 
 /**
@@ -115,7 +119,7 @@ const createSvgElement = (
     return elem;
 };
 
-const render = (): ((s: State) => void) => {
+const render = (): ((s: State & { birdY: number }) => void) => {
     // Canvas elements
     const gameOver = document.querySelector("#gameOver") as SVGElement;
     const container = document.querySelector("#main") as HTMLElement;
@@ -130,50 +134,55 @@ const render = (): ((s: State) => void) => {
         "viewBox",
         `0 0 ${Viewport.CANVAS_WIDTH} ${Viewport.CANVAS_HEIGHT}`,
     );
-    /**
-     * Renders the current state to the canvas.
-     *
-     * In MVC terms, this updates the View using the Model.
-     *
-     * @param s Current state
-     */
-    return (s: State) => {
-        // Add birb to the main grid canvas
-        const birdImg = createSvgElement(svg.namespaceURI, "image", {
-            href: "assets/birb.png",
-            x: `${Viewport.CANVAS_WIDTH * 0.3 - Birb.WIDTH / 2}`,
-            y: `${Viewport.CANVAS_HEIGHT / 2 - Birb.HEIGHT / 2}`,
-            width: `${Birb.WIDTH}`,
-            height: `${Birb.HEIGHT}`,
-        });
-        svg.appendChild(birdImg);
 
-        // Draw a static pipe as a demonstration
-        const pipeGapY = 200; // vertical center of the gap
-        const pipeGapHeight = 100;
+    // --- Create bird once ---
+    const birdImg = createSvgElement(svg.namespaceURI, "image", {
+        href: "assets/birb.png",
+        x: `${Viewport.CANVAS_WIDTH * 0.3 - Birb.WIDTH / 2}`,
+        y: `${Viewport.CANVAS_HEIGHT / 2 - Birb.HEIGHT / 2}`,
+        width: `${Birb.WIDTH}`,
+        height: `${Birb.HEIGHT}`,
+    });
+    svg.appendChild(birdImg);
 
-        // Top pipe
-        const pipeTop = createSvgElement(svg.namespaceURI, "rect", {
-            x: "150",
-            y: "0",
-            width: `${Constants.PIPE_WIDTH}`,
-            height: `${pipeGapY - pipeGapHeight / 2}`,
-            fill: "green",
-        });
+    // --- Create pipes once ---
+    const pipeGapY = 200; // vertical center of the gap
+    const pipeGapHeight = 100;
 
-        // Bottom pipe
-        const pipeBottom = createSvgElement(svg.namespaceURI, "rect", {
-            x: "150",
-            y: `${pipeGapY + pipeGapHeight / 2}`,
-            width: `${Constants.PIPE_WIDTH}`,
-            height: `${Viewport.CANVAS_HEIGHT - (pipeGapY + pipeGapHeight / 2)}`,
-            fill: "green",
-        });
+    const pipeTop = createSvgElement(svg.namespaceURI, "rect", {
+        x: "150",
+        y: "0",
+        width: `${Constants.PIPE_WIDTH}`,
+        height: `${pipeGapY - pipeGapHeight / 2}`,
+        fill: "green",
+    });
 
-        svg.appendChild(pipeTop);
-        svg.appendChild(pipeBottom);
+    const pipeBottom = createSvgElement(svg.namespaceURI, "rect", {
+        x: "150",
+        y: `${pipeGapY + pipeGapHeight / 2}`,
+        width: `${Constants.PIPE_WIDTH}`,
+        height: `${Viewport.CANVAS_HEIGHT - (pipeGapY + pipeGapHeight / 2)}`,
+        fill: "green",
+    });
+
+    svg.appendChild(pipeTop);
+    svg.appendChild(pipeBottom);
+
+    // --- Return function that updates bird each tick ---
+    return (s: State & { birdY: number }) => {
+        // Update bird Y position based on state
+        birdImg.setAttribute("y", `${s.birdY}`);
+
+        // Game over text
+        gameOver.setAttribute("visibility", s.gameEnd ? "visible" : "hidden");
+        gameOver.textContent = s.gameEnd ? "Game Over!" : "";
+
+        // Placeholder score/lives
+        livesText ? livesText.textContent = "Lives: 3" : null;
+        scoreText ? scoreText.textContent = "Score: 0" : null;
     };
 };
+
 
 
 // Update State for Bird Movemenent
