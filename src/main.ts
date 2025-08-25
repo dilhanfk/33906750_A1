@@ -42,7 +42,7 @@ const Birb = {
 
 const Constants = {
     PIPE_WIDTH: 50,
-    TICK_RATE_MS: 500, // Might need to change this!
+    TICK_RATE_MS: 300, // Might need to change this!
 } as const;
 
 // User input
@@ -55,12 +55,14 @@ type State = Readonly<{
     gameEnd: boolean;
     birdY: number;
     vy: number;
+    lives: number;
 }>;
 
 const initialState: State = {
     gameEnd: false,
     birdY: 200, // Start in the middle of the screen
-    vy: 0       // Initial vertical velocity
+    vy: 0,       // Initial vertical velocity
+    lives: 3, // start with 3 lives
 };
 
 /**
@@ -127,6 +129,7 @@ const render = (): ((s: State & { birdY: number }) => void) => {
     // Text fields
     const livesText = document.querySelector("#livesText") as HTMLElement;
     const scoreText = document.querySelector("#scoreText") as HTMLElement;
+    
 
     const svg = document.querySelector("#svgCanvas") as SVGSVGElement;
 
@@ -156,69 +159,95 @@ const render = (): ((s: State & { birdY: number }) => void) => {
         gameOver.textContent = s.gameEnd ? "Game Over!" : "";
 
         // Placeholder score/lives
-        livesText ? livesText.textContent = "Lives: 3" : null;
         scoreText ? scoreText.textContent = "Score: 0" : null;
+        livesText ? livesText.textContent = `Lives: ${s.lives}` : null;
     };
 };
 
 
 
 // Update State for Bird Movemenent
-export const state$ = (csvContents: string): Observable<State> => {
-    /** User input */
+// Update State for Bird Movement (with pipe collisions + lives)
+// Update State for Bird Movement (with pipe collisions + lives)
+export const state$ = (
+  csvContents: string,
+  activePipes: Array<{ pipe: Pipe; topElem: SVGRectElement; bottomElem: SVGRectElement }>
+): Observable<State> => {
+  /** User input */
+  const key$ = fromEvent<KeyboardEvent>(document, "keypress");
+  const flap$ = key$.pipe(
+    filter(({ code }) => code === "Space"),
+    map(() => -8) // Flap gives upward velocity
+  );
 
-    // Create an observable for key presses (spacebar to flap)
-    const key$ = fromEvent<KeyboardEvent>(document, "keypress");
-    const flap$ = key$.pipe(
-        filter(({ code }) => code === "Space"),
-        map(() => -8) // Flap gives upward velocity
-    );
+  /** Determines the rate of time steps */
+  const tick$ = interval(Constants.TICK_RATE_MS).pipe(
+    map(() => 1) // Each tick applies a downward force of gravity (1)
+  );
 
-    /** Determines the rate of time steps */
-    const tick$ = interval(Constants.TICK_RATE_MS).pipe(
-        map(() => 1) // Each tick applies a downward force of gravity (1)
-    );
+  // Merge flap inputs and gravity ticks
+  const movement$ = merge(
+    flap$.pipe(map(vy => ({ type: "flap", vy }))),
+    tick$.pipe(map(() => ({ type: "gravity", vy: 2 })))
+  );
 
-    // Merge flap inputs and gravity ticks
-    const movement$ = merge(
-        flap$.pipe(map(vy => ({ type: "flap", vy }))), // flap: direct velocity change 
-        tick$.pipe(map(() => ({ type: "gravity", vy: 2 }))) // gravity: adds downward velocity (tick will change velocity)
-    );
+  const initialBirdState: State = {
+    ...initialState,
+    birdY: 200,
+    vy: 0,
+  };
 
-    // Initial state with birdY and vy
-    const initialBirdState = {
-        ...initialState, // spread operator to keep the initial state of bird
-        birdY: 200, // Start in the middle of the screen
-        vy: 0 // velocity starts at 0
-    };
+  return movement$.pipe(
+    scan((state: State, event: any) => {
+      if (state.gameEnd) return state; // freeze if game over
 
-    return movement$.pipe( // state changes now (over time)
-        scan((state: any, event: any) => {
-            let vy = state.vy; // vy is state with current velocity
-            vy = event.type === "flap"
-                ? event.vy // If flap, set upward velocity
-            : event.type === "gravity"
-                ? vy + event.vy // If gravity, add gravity effect 
-                // event.vy = change in velocity coming from gravity event 
-                //vy = birds current velocity
-            : vy; // Otherwise, keep current velocity
-            const newY = state.birdY + vy;
+      // Calculate velocity
+      let vy =
+        event.type === "flap"
+          ? event.vy
+          : event.type === "gravity"
+          ? state.vy + event.vy
+          : state.vy;
 
-            return {
-                ...state, // spread operator to copy all properties of state object in a new object
-                birdY: newY, // new position
-                vy, // new velocity
-                gameEnd: newY < 0 || newY > Viewport.CANVAS_HEIGHT // end game if bird hits top/bottom
-            };
+      // Update position
+      let birdY = state.birdY + vy;
 
-        }, initialBirdState), // start from initial bird state
-        map((state: any) => ({ // only update what is relevent for next state (where is bird vertically, is the game over?, velocity of bird)
-            gameEnd: state.gameEnd, // is game over?
-            vy: state.vy, // Keep vy for smoother animations or collisions
-            birdY: state.birdY // bird’s vertical position
-        }))
-    );
+      // Check wall collision
+      let gameEnd = birdY < 0 || birdY + Birb.HEIGHT > Viewport.CANVAS_HEIGHT ? true : false;
+      let lives = state.lives;
+
+      // Check pipe collisions using ternary style
+      for (const { pipe } of activePipes) {
+        const collision = isColliding(birdY, pipe);
+
+        collision === "top"
+          ? (vy = 5 + Math.random() * 5, birdY += vy, lives -= 1)
+          : collision === "bottom"
+          ? (vy = -(5 + Math.random() * 5), birdY += vy, lives -= 1)
+          : null;
+
+        lives <= 0 ? (gameEnd = true, vy = 0, birdY = Math.max(0, Math.min(Viewport.CANVAS_HEIGHT - Birb.HEIGHT, birdY))) : null;
+      }
+
+      return {
+        ...state,
+        vy,
+        birdY,
+        lives,
+        gameEnd,
+      };
+    }, initialBirdState),
+
+    map((state: State) => ({
+      gameEnd: state.gameEnd,
+      vy: state.vy,
+      birdY: state.birdY,
+      lives: state.lives,
+    }))
+  );
 };
+
+
 
 type Pipe = {
     x: number;            // current horizontal position
@@ -234,9 +263,10 @@ const SPAWN_THRESHOLD = 0.7 * Viewport.CANVAS_WIDTH; // spawn new pipe after pre
 
 // Creates an initial pipe and continuously spawns new pipes as the previous moves left. (by spawn threshold)
 // Pipes are split into top and bottom, with a vertical gap in between.
-const animatePipes = (svg: SVGSVGElement) => {
-    // Active pipes on screen
-    const activePipes: Array<{pipe: Pipe, topElem: SVGRectElement, bottomElem: SVGRectElement}> = []; // array of active pipes on screen
+const animatePipes = (
+    svg: SVGSVGElement,
+    activePipes: Array<{ pipe: Pipe; topElem: SVGRectElement; bottomElem: SVGRectElement }>
+) => {
 
     // Function to create a new pipe
     const createPipe = () => {
@@ -268,33 +298,66 @@ const animatePipes = (svg: SVGSVGElement) => {
         activePipes.push({ pipe, topElem, bottomElem }); // add to active pipes list, to track.
     };
 
+    /**
+     * Collision detection between the bird and a pipe.
+     *
+     * @param birdY - the bird's vertical position
+     * @param pipe - the pipe being checked
+     * @returns "top" if hitting the top pipe, "bottom" if hitting the bottom pipe, or null if no collision
+     */
+
     // Spawn first pipe immediately
     createPipe();
 
     // Animate pipes on each tick
     interval(Constants.TICK_RATE_MS / 2).subscribe(() => {
+        // Get current bird Y position from SVG element
+        const birdElem = document.querySelector("image") as SVGImageElement;
+        const birdY = birdElem?.y.baseVal.value ?? 200; // default to 200 if missing
+
         // Loop through all active pipes in reverse (so we can safely remove pipes while iterating)
-        // removing in reverse order wont affect index's for pipes yet to spawn
-        for (let i = activePipes.length - 1; i >= 0; i--) { 
-            const { pipe, topElem, bottomElem } = activePipes[i]; 
+        for (let i = activePipes.length - 1; i >= 0; i--) {
+            const { pipe, topElem, bottomElem } = activePipes[i];
 
             pipe.x -= PIPE_SPEED; // Move pipe left by PIPE_SPEED pixels
 
-            // Update pipe positions on screen, or remove if it has gone off the left side of screen.
-            pipe.x + Constants.PIPE_WIDTH > 0 // if pipe is still on the screen
+            // Update pipe positions on screen, or remove if it has gone off the left side of screen using ternary
+            pipe.x + Constants.PIPE_WIDTH > 0
                 ? (topElem.setAttribute("x", `${pipe.x}`), // Update the x-position of the top pipe element to match pipe.x
                    bottomElem.setAttribute("x", `${pipe.x}`)) // Update the x-position of the bottom pipe element to match pipe.x
                 : (svg.removeChild(topElem), // remove top pipe elem from SVG Canvas
                    svg.removeChild(bottomElem), // remove bottom pipe from SVG Canvas
                    activePipes.splice(i, 1)); // remove the pipe from the active pipes array
+
+            // Collision check each frame using ternary
+            const collision = isColliding(birdY, pipe);
         }
 
-        // Spawn a new pipe if there are no pipes, or last pipe has moved past the spawn threshold
+        // Spawn a new pipe if there are no pipes, or last pipe has moved past the spawn threshold using ternary
         activePipes.length === 0 || activePipes[activePipes.length - 1].pipe.x < SPAWN_THRESHOLD
             ? createPipe()
             : null; // Do nothing otherwise
     });
 };
+
+const isColliding = (birdY: number, pipe: Pipe): "top" | "bottom" | null => {
+    const birdTop = birdY;
+    const birdBottom = birdY + Birb.HEIGHT;
+    const birdX = Viewport.CANVAS_WIDTH * 0.3; // Bird’s fixed horizontal position
+
+    const withinPipeX =
+        birdX + Birb.WIDTH / 2 > pipe.x && birdX - Birb.WIDTH / 2 < pipe.x + Constants.PIPE_WIDTH;
+
+    return !withinPipeX
+        ? null                      // not overlapping horizontally → no collision
+        : birdTop < pipe.gapY
+        ? "top"                     // hits top pipe
+        : birdBottom > pipe.gapY + pipe.pipeGapHeight
+        ? "bottom"                  // hits bottom pipe
+        : null;                     // safe inside gap
+};
+
+
 
 
 
@@ -322,13 +385,20 @@ if (typeof window !== "undefined") {
 
     // Observable: wait for first user click
     const click$ = fromEvent(document.body, "mousedown").pipe(take(1));
+    csv$.pipe(
+        switchMap(contents => 
+            click$.pipe(
+                switchMap(() => {
+                    const svg = document.querySelector("#svgCanvas") as SVGSVGElement;
 
-csv$.pipe(
-    switchMap(contents =>
-        click$.pipe(switchMap(() => {
-            animatePipes(document.querySelector("#svgCanvas") as SVGSVGElement);
-            return state$(contents);
-        })),
-    ),
-).subscribe(render());
+                    // Create pipes and return the activePipes array
+                    const activePipes: Array<{ pipe: Pipe; topElem: SVGRectElement; bottomElem: SVGRectElement }> = [];
+                    animatePipes(svg, activePipes); // pass the array so state$ can use it
+
+                    // Return the state$ observable with activePipes for collision detection
+                    return state$(contents, activePipes);
+                })
+            )
+        )
+    ).subscribe(render());
 }
