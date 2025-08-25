@@ -56,6 +56,7 @@ type State = Readonly<{
     birdY: number; // Bird vertical position
     vy: number; // Bird vertical velocity
     lives: number;
+    score: number;    // Player score
 }>;
 
 // Initial state
@@ -64,6 +65,7 @@ const initialState: State = {
     birdY: 200, // Start in the middle of the screen
     vy: 0,       // Initial vertical velocity
     lives: 3, // start with 3 lives
+    score: 0,
 };
 
 /**
@@ -151,31 +153,31 @@ const render = (): ((s: State & { birdY: number }) => void) => {
     let gameOver: SVGTextElement | null = null; 
     
     // Return function that updates bird each tick
-    return (s: State & { birdY: number }) => {
-        // Update bird Y position based on state
-        birdImg.setAttribute("y", `${s.birdY}`);
+return (s: State & { birdY: number }) => {
+    // Update bird Y position based on state
+    birdImg.setAttribute("y", `${s.birdY}`);
 
-        // Update score and lives text
-        scoreText ? scoreText.textContent = "Score: 0" : null;
-        livesText ? livesText.textContent = `Lives: ${s.lives}` : null;
+    // Update score and lives text dynamically
+    if (scoreText) scoreText.textContent = `Score: ${s.score}`; // 
+    if (livesText) livesText.textContent = `Lives: ${s.lives}`;
 
-        // If game ended, create Game Over text if it doesn't exist yet
-        s.gameEnd
-            ? (gameOver
-                ? null
-                : (() => {
-                    gameOver = document.createElementNS("http://www.w3.org/2000/svg", "text");
-                    gameOver.setAttribute("x", "50%");
-                    gameOver.setAttribute("y", "50%");
-                    gameOver.setAttribute("text-anchor", "middle");
-                    gameOver.setAttribute("dominant-baseline", "middle");
-                    gameOver.setAttribute("font-size", "48");
-                    gameOver.setAttribute("fill", "red");
-                    gameOver.textContent = "GAME OVER";
-                    svg.appendChild(gameOver!);
-                })())
-            : null;
-    };
+    // If game ended, create Game Over text if it doesn't exist yet
+    s.gameEnd
+        ? (gameOver
+            ? null
+            : (() => {
+                gameOver = document.createElementNS("http://www.w3.org/2000/svg", "text");
+                gameOver.setAttribute("x", "50%");
+                gameOver.setAttribute("y", "50%");
+                gameOver.setAttribute("text-anchor", "middle");
+                gameOver.setAttribute("dominant-baseline", "middle");
+                gameOver.setAttribute("font-size", "48");
+                gameOver.setAttribute("fill", "red");
+                gameOver.textContent = "GAME OVER";
+                svg.appendChild(gameOver!);
+            })())
+        : null;
+};
 };
 
 // --- Pipe Types ---
@@ -183,6 +185,7 @@ type Pipe = {
     x: number;            // current horizontal position
     gapY: number;         // vertical start of the gap (top of gap)
     pipeGapHeight: number; // height of the gap
+    passed?: boolean;      // whether the pipe has been passed by the bird
 };
 
 // Constants 
@@ -336,24 +339,34 @@ export const state$ = (
             newBirdY = 200;
             gameEnd = lives <= 0 ? true : false;
         }
-        // Iterate over all active pipes to check for collisions
+
+        // Track current score
+        let score = state.score;
+
+        // Iterate over all active pipes to check for collisions and score
         for (const { pipe } of activePipes) {
             const collision = isColliding(newBirdY, pipe);
-            // Check if bird collides with this pipe
+            
             if (collision) {
                 lives -= 1; // Subtract a life on collision
                 gameEnd = lives <= 0 ? true : gameEnd; // End game if no lives left
                 resetPipes(); // Reset all pipes
-                return { ...state, birdY: 200, vy: 0, lives, gameEnd }; // Reset bird position and velocity
+                return { ...state, birdY: 200, vy: 0, lives, gameEnd, score }; // Reset bird
+            }
+
+            // Increase score if bird passed the pipe (bird right > pipe right, and hasn't scored yet)
+            if (!pipe["passed"] && Viewport.CANVAS_WIDTH * 0.3 > pipe.x + Constants.PIPE_WIDTH) {
+                score += 1;
+                pipe["passed"] = true; // mark pipe as passed so we don't double-count
             }
         }
         // Return updated state including new position, velocity, lives, and game end bool
-        return { ...state, vy, birdY: newBirdY, lives, gameEnd };
+        return { ...state, vy, birdY: newBirdY, lives, gameEnd, score };
     }, initialBirdState), // scan update state to inital bird state
 
     
     // Map final state to relevant properties for rendering
-    map(state => ({ gameEnd: state.gameEnd, vy: state.vy, birdY: state.birdY, lives: state.lives }))
+    map(state => ({ gameEnd: state.gameEnd, vy: state.vy, birdY: state.birdY, lives: state.lives, score: state.score }))
   );
 };
 
