@@ -285,7 +285,6 @@ const animatePipes = (svg: SVGSVGElement) => {
     // Return active pipes, reset function, and collision checker for state$
     return { activePipes, resetPipes, isColliding };
 };
-
 // --- Ghost Manager ---
 class GhostManager {
     private svg: SVGSVGElement;
@@ -315,6 +314,14 @@ class GhostManager {
         const intervalId = setInterval(() => {
             if (index >= runPositions.length) {
                 clearInterval(intervalId);
+                
+                // Remove ghost from DOM and ghostElems array
+                const ghostIndex = this.ghostElems.indexOf(ghostImg);
+                if (ghostIndex !== -1) {
+                    this.svg.removeChild(ghostImg);
+                    this.ghostElems.splice(ghostIndex, 1);
+                }
+
                 return;
             }
             ghostImg.setAttribute("y", `${runPositions[index]}`); // animate Y along recorded trail
@@ -334,9 +341,8 @@ class GhostManager {
         this.ghostElems.forEach(g => this.svg.removeChild(g));
         this.ghostElems = [];
     }
-
-    
 }
+
 
 // Update state
 export const state$ = (
