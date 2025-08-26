@@ -175,7 +175,7 @@ return (s: State & { birdY: number }) => {
             gameOver.textContent = "GAME OVER";
             svg.appendChild(gameOver!);
         })())
-    : (gameOver ? (svg.removeChild(gameOver), gameOver = null) : null); // ✅ Remove Game Over text on restart
+    : (gameOver ? (svg.removeChild(gameOver), gameOver = null) : null);
 }}
 
 // --- Pipe Types ---
