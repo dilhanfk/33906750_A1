@@ -307,8 +307,6 @@ class GhostManager {
      * @param runPositions List of Y positions from previous run
      */
     spawnGhost(runPositions: number[]) {
-        if (runPositions.length === 0) return; // nothing to spawn
-
         const ghostImg = createSvgElement(this.svg.namespaceURI, "image", {
             href: "assets/birb.png",
             x: `${Viewport.CANVAS_WIDTH * 0.3 - Birb.WIDTH / 2}`,
@@ -317,7 +315,6 @@ class GhostManager {
             height: `${Birb.HEIGHT}`,
             opacity: "0.5", // semi-transparent
         }) as SVGImageElement;
-
         this.svg.appendChild(ghostImg);
         this.ghostElems.push(ghostImg); // Track the ghost
 
@@ -325,45 +322,45 @@ class GhostManager {
         const intervalId = setInterval(() => {
             if (index >= runPositions.length) {
                 clearInterval(intervalId);
-                this.removeGhostByElement(ghostImg);
+                
+                // Remove ghost from DOM and ghostElems array
+                const ghostIndex = this.ghostElems.indexOf(ghostImg);
+                if (ghostIndex !== -1) {
+                    this.svg.removeChild(ghostImg);
+                    this.ghostElems.splice(ghostIndex, 1);
+                }
+
+                // Remove intervalId from tracked intervals
+                const idIndex = this.ghostIntervals.indexOf(intervalId);
+                if (idIndex !== -1) this.ghostIntervals.splice(idIndex, 1);
+
                 return;
             }
-            ghostImg.setAttribute("y", `${runPositions[index]}`);
+            ghostImg.setAttribute("y", `${runPositions[index]}`); // animate Y along recorded trail
             index++;
-        }, Constants.TICK_RATE_MS);
+        }, Constants.TICK_RATE_MS); // same tick rate as main bird
 
-        this.ghostIntervals.push(intervalId);
-    }
-
-    private removeGhostByElement(elem: SVGImageElement) {
-        const i = this.ghostElems.indexOf(elem);
-        if (i !== -1) this.ghostElems.splice(i, 1);
-        if (elem.parentNode) this.svg.removeChild(elem);
+        this.ghostIntervals.push(intervalId); // Track interval for later clearing
     }
 
     removeGhost(index: number) {
-        if (this.ghostElems[index]) {
-            this.removeGhostByElement(this.ghostElems[index]);
-        }
+        this.ghostElems[index] ? (this.svg.removeChild(this.ghostElems[index]), this.ghostElems.splice(index, 1)) : null;
         if (this.ghostIntervals[index]) {
             clearInterval(this.ghostIntervals[index]);
             this.ghostIntervals.splice(index, 1);
         }
     }
 
-    removeAllGhosts() {
-        // Clear all intervals first
+        removeAllGhosts() {
+        // Clear all ghost animation intervals immediately
         this.ghostIntervals.forEach(id => clearInterval(id));
         this.ghostIntervals = [];
 
         // Remove all ghost elements from SVG
-        this.ghostElems.forEach(g => {
-            if (g.parentNode) this.svg.removeChild(g);
-        });
+        this.ghostElems.forEach(g => this.svg.removeChild(g));
         this.ghostElems = [];
     }
 }
-
 
 
 // Update state
