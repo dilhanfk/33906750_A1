@@ -45,10 +45,6 @@ const Constants = {
     TICK_RATE_MS: 40, // Might need to change this!
 } as const;
 
-// User input
-
-type Key = "Space";
-
 // State processing
 
 type State = Readonly<{
@@ -351,15 +347,6 @@ class GhostManager {
         }
     }
 
-        removeAllGhosts() {
-        // Clear all ghost animation intervals immediately
-        this.ghostIntervals.forEach(id => clearInterval(id));
-        this.ghostIntervals = [];
-
-        // Remove all ghost elements from SVG
-        this.ghostElems.forEach(g => this.svg.removeChild(g));
-        this.ghostElems = [];
-    }
 }
 
 
@@ -406,11 +393,10 @@ export const state$ = (
 
     if (event.type === "restart") {
         currentRun = [];
-        ghostManager.removeAllGhosts(); // Clear all ghosts
         resetPipes(); // Reset all pipes to initial spawn
     return { ...initialBirdState }; // Reset bird position, velocity, lives, score, gameEnd
     }
-        
+
         if (state.gameEnd) return state;
 
         // Determine vertical velocity based on event type
@@ -465,8 +451,6 @@ export const state$ = (
 
         // Record current Y position for ghost
         currentRun.push(newBirdY);
-        // if game ended remove all ghosts
-        gameEnd ? ghostManager.removeAllGhosts(): null;
 
         // Return updated state including new position, velocity, lives, and game end bool
         return { ...state, vy, birdY: newBirdY, lives, gameEnd, score };
