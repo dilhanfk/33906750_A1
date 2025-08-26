@@ -286,6 +286,51 @@ const animatePipes = (svg: SVGSVGElement) => {
     return { activePipes, resetPipes, isColliding };
 };
 
+// --- Ghost Manager ---
+class GhostManager {
+    private svg: SVGSVGElement;
+    private allRuns: number[][] = [];
+    private ghostElems: SVGImageElement[] = [];
+
+    constructor(svg: SVGSVGElement) {
+        this.svg = svg;
+    }
+
+    /**
+     * Spawn a ghost bird for a finished run
+     * @param runPositions List of Y positions from previous run
+     */
+    spawnGhost(runPositions: number[]) {
+        const ghostImg = createSvgElement(this.svg.namespaceURI, "image", {
+            href: "assets/birb.png",
+            x: `${Viewport.CANVAS_WIDTH * 0.3 - Birb.WIDTH / 2}`,
+            y: `${runPositions[0]}`, // start at first Y pos
+            width: `${Birb.WIDTH}`,
+            height: `${Birb.HEIGHT}`,
+            opacity: "0.5", // semi-transparent
+        }) as SVGImageElement;
+        this.svg.appendChild(ghostImg);
+
+        let index = 0;
+        const intervalId = setInterval(() => {
+            if (index >= runPositions.length) {
+                clearInterval(intervalId);
+                return;
+            }
+            ghostImg.setAttribute("y", `${runPositions[index]}`); // animate Y along recorded trail
+            index++;
+        }, Constants.TICK_RATE_MS); // same tick rate as main bird
+    }
+
+    removeGhost(index: number) {
+        const ghost = this.ghostElems[index];
+        if (ghost) {
+            this.svg.removeChild(ghost);
+            this.ghostElems.splice(index, 1);
+        }
+    }
+}
+
 // Update state
 export const state$ = (
   csvContents: string, // leave blank
@@ -302,6 +347,7 @@ export const state$ = (
 
   // Interval observable for gravity ticks
   const tick$ = interval(Constants.TICK_RATE_MS).pipe(map(() => 1));
+  
 
   // Merge flap and gravity events into one movement stream
   const movement$ = merge(
@@ -310,6 +356,11 @@ export const state$ = (
   );
 
   const initialBirdState: State = { ...initialState, birdY: 200, vy: 0 };
+
+  // --- Ghost integration ---
+  const svg = document.querySelector("#svgCanvas") as SVGSVGElement;
+  const ghostManager = new GhostManager(svg);
+  let currentRun: number[] = [];
 
   // Process the movement stream to update game state
   return movement$.pipe(
@@ -334,6 +385,10 @@ export const state$ = (
         // Check collision with top/bottom screen
         let newBirdY = birdY;
         if (birdY < 0 || birdY + Birb.HEIGHT > Viewport.CANVAS_HEIGHT) {
+            if (currentRun.length > 0) {
+                ghostManager.spawnGhost([...currentRun]); // send run to ghost
+                currentRun = [];
+            }
             lives -= 1;
             resetPipes();
             newBirdY = 200;
@@ -348,6 +403,10 @@ export const state$ = (
             const collision = isColliding(newBirdY, pipe);
             
             if (collision) {
+                if (currentRun.length > 0) {
+                    ghostManager.spawnGhost([...currentRun]); // send run to ghost
+                    currentRun = [];
+                }
                 lives -= 1; // Subtract a life on collision
                 gameEnd = lives <= 0 ? true : gameEnd; // End game if no lives left
                 resetPipes(); // Reset all pipes
@@ -360,6 +419,10 @@ export const state$ = (
                 pipe["passed"] = true; // mark pipe as passed so we don't double-count
             }
         }
+
+        // Record current Y position for ghost
+        currentRun.push(newBirdY);
+
         // Return updated state including new position, velocity, lives, and game end bool
         return { ...state, vy, birdY: newBirdY, lives, gameEnd, score };
     }, initialBirdState), // scan update state to inital bird state
@@ -369,6 +432,8 @@ export const state$ = (
     map(state => ({ gameEnd: state.gameEnd, vy: state.vy, birdY: state.birdY, lives: state.lives, score: state.score }))
   );
 };
+
+
 
 // The following simply runs your main function on window load.  Make sure to leave it in place.
 // You should not need to change this, beware if you are.
@@ -386,15 +451,13 @@ if (typeof window !== "undefined") {
     // Observable: wait for first user click
     const click$ = fromEvent(document.body, "mousedown").pipe(take(1));
 
-    csv$.pipe(
+        csv$.pipe(
         switchMap(contents =>
             click$.pipe(switchMap(() => {
-                // Create pipes and return the activePipes array
-                const activePipes: Array<{ pipe: Pipe; topElem: SVGRectElement; bottomElem: SVGRectElement }> = []; // place holder, decided to declare in Pipe type
+                const activePipes = [];
                 const pipes = animatePipes(document.querySelector("#svgCanvas") as SVGSVGElement); 
-                // Return the state$ observable with activePipes for collision detection
                 return state$(contents, pipes);
             })),
         ),
     ).subscribe(render());
-}
+    }
