@@ -126,8 +126,6 @@ const createSvgElement = (
 
 // RENDERING
 const render = (): ((s: State & { birdY: number }) => void) => {
-    // Canvas elements
-    const container = document.querySelector("#main") as HTMLElement; // Container element
 
     // Text fields
     const livesText = document.querySelector("#livesText") as HTMLElement; // Lives text
@@ -289,6 +287,7 @@ const animatePipes = (svg: SVGSVGElement) => {
 class GhostManager {
     private svg: SVGSVGElement;
     private ghostElems: SVGImageElement[] = [];
+    private ghostIntervals: ReturnType<typeof setInterval>[] = []; // Track all ghost animation intervals
 
     constructor(svg: SVGSVGElement) {
         this.svg = svg;
@@ -308,7 +307,7 @@ class GhostManager {
             opacity: "0.5", // semi-transparent
         }) as SVGImageElement;
         this.svg.appendChild(ghostImg);
-        this.ghostElems.push(ghostImg); // <-- Track the ghost
+        this.ghostElems.push(ghostImg); // Track the ghost
 
         let index = 0;
         const intervalId = setInterval(() => {
@@ -322,24 +321,31 @@ class GhostManager {
                     this.ghostElems.splice(ghostIndex, 1);
                 }
 
+                // Remove intervalId from tracked intervals
+                const idIndex = this.ghostIntervals.indexOf(intervalId);
+                if (idIndex !== -1) this.ghostIntervals.splice(idIndex, 1);
+
                 return;
             }
             ghostImg.setAttribute("y", `${runPositions[index]}`); // animate Y along recorded trail
             index++;
         }, Constants.TICK_RATE_MS); // same tick rate as main bird
+
+        this.ghostIntervals.push(intervalId); // Track interval for later clearing
     }
 
     removeGhost(index: number) {
-        const ghost = this.ghostElems[index];
-        if (ghost) {
-            this.svg.removeChild(ghost);
-            this.ghostElems.splice(index, 1);
-        }
+        this.ghostElems[index] ? (this.svg.removeChild(this.ghostElems[index]), this.ghostElems.splice(index, 1)) : null;
     }
 
     removeAllGhosts() {
+        // Remove all ghost elements from SVG
         this.ghostElems.forEach(g => this.svg.removeChild(g));
         this.ghostElems = [];
+
+        // Clear all ghost animation intervals immediately
+        this.ghostIntervals.forEach(id => clearInterval(id));
+        this.ghostIntervals = [];
     }
 }
 
@@ -435,7 +441,7 @@ export const state$ = (
 
         // Record current Y position for ghost
         currentRun.push(newBirdY);
-
+        // if game ended remove all ghosts
         gameEnd ? ghostManager.removeAllGhosts() : null;
 
         // Return updated state including new position, velocity, lives, and game end bool
