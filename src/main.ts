@@ -160,23 +160,23 @@ return (s: State & { birdY: number }) => {
     if (livesText) livesText.textContent = `Lives: ${s.lives}`;
 
     // If game ended, create Game Over text if it doesn't exist yet
+    // Remove Game Over if game restarted
     s.gameEnd
-        ? (gameOver
-            ? null
-            : (() => {
-                gameOver = document.createElementNS("http://www.w3.org/2000/svg", "text");
-                gameOver.setAttribute("x", "50%");
-                gameOver.setAttribute("y", "20%");
-                gameOver.setAttribute("text-anchor", "middle");
-                gameOver.setAttribute("dominant-baseline", "middle");
-                gameOver.setAttribute("font-size", "48");
-                gameOver.setAttribute("fill", "red");
-                gameOver.textContent = "GAME OVER";
-                svg.appendChild(gameOver!);
-            })())
-        : null;
-};
-};
+    ? (gameOver
+        ? null
+        : (() => {
+            gameOver = document.createElementNS("http://www.w3.org/2000/svg", "text");
+            gameOver.setAttribute("x", "50%");
+            gameOver.setAttribute("y", "20%");
+            gameOver.setAttribute("text-anchor", "middle");
+            gameOver.setAttribute("dominant-baseline", "middle");
+            gameOver.setAttribute("font-size", "48");
+            gameOver.setAttribute("fill", "red");
+            gameOver.textContent = "GAME OVER";
+            svg.appendChild(gameOver!);
+        })())
+    : (gameOver ? (svg.removeChild(gameOver), gameOver = null) : null); // ✅ Remove Game Over text on restart
+}}
 
 // --- Pipe Types ---
 type Pipe = {
@@ -243,11 +243,20 @@ const animatePipes = (svg: SVGSVGElement) => {
     };
 
     // Reset pipes after collision
-    const resetPipes = () => activePipes.length > 0
+    let resetPipes = () => activePipes.length > 0
         ? (activePipes.forEach(({ topElem, bottomElem }) => (svg.removeChild(topElem), svg.removeChild(bottomElem))), // Remove SVG elements
            activePipes.splice(0, activePipes.length), // Clear array
            createPipe()) // Spawn first pipe again
         : createPipe(); // else just spawn the pipe again
+
+    const resetAllPipes = () => {
+        activePipes.forEach(({ topElem, bottomElem }) => (svg.removeChild(topElem), svg.removeChild(bottomElem)));
+        activePipes.splice(0, activePipes.length);
+        createPipe(); // spawn initial pipe
+
+        // Overwrite the old resetPipes so it can be called from state$ on restart
+        resetPipes = resetAllPipes;
+    };
 
     // Spawn first pipe
     createPipe();
@@ -367,6 +376,8 @@ export const state$ = (
 
   // Filter keypresses to only Space key, and map to a flap velocity
   const flap$ = key$.pipe(filter(({ code }) => code === "Space"), map(() => -12));
+  // Detect "R" key to restart
+  const restart$ = key$.pipe(filter(({ code }) => code === "KeyR"));
 
   // Interval observable for gravity ticks
   const tick$ = interval(Constants.TICK_RATE_MS).pipe(map(() => 1));
@@ -375,7 +386,8 @@ export const state$ = (
   // Merge flap and gravity events into one movement stream
   const movement$ = merge(
     flap$.pipe(map(vy => ({ type: "flap", vy }))), // Flap event with velocity
-    tick$.pipe(map(() => ({ type: "gravity", vy: 2 }))) // Gravity event with velocity
+    tick$.pipe(map(() => ({ type: "gravity", vy: 2 }))), // Gravity event with velocity
+    restart$.pipe(map(() => ({ type: "restart" }))) // Restart event
   );
 
   const initialBirdState: State = { ...initialState, birdY: 200, vy: 0 };
@@ -391,6 +403,14 @@ export const state$ = (
         //state is accumed state of bird over time
         // will take in more possible events
         // If the game has ended, do nothing (early return)
+
+    if (event.type === "restart") {
+        currentRun = [];
+        ghostManager.removeAllGhosts(); // Clear all ghosts
+        resetPipes(); // Reset all pipes to initial spawn
+    return { ...initialBirdState }; // Reset bird position, velocity, lives, score, gameEnd
+    }
+        
         if (state.gameEnd) return state;
 
         // Determine vertical velocity based on event type
