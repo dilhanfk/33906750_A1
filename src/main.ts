@@ -336,16 +336,20 @@ class GhostManager {
 
     removeGhost(index: number) {
         this.ghostElems[index] ? (this.svg.removeChild(this.ghostElems[index]), this.ghostElems.splice(index, 1)) : null;
+        if (this.ghostIntervals[index]) {
+            clearInterval(this.ghostIntervals[index]);
+            this.ghostIntervals.splice(index, 1);
+        }
     }
 
-    removeAllGhosts() {
-        // Remove all ghost elements from SVG
-        this.ghostElems.forEach(g => this.svg.removeChild(g));
-        this.ghostElems = [];
-
+        removeAllGhosts() {
         // Clear all ghost animation intervals immediately
         this.ghostIntervals.forEach(id => clearInterval(id));
         this.ghostIntervals = [];
+
+        // Remove all ghost elements from SVG
+        this.ghostElems.forEach(g => this.svg.removeChild(g));
+        this.ghostElems = [];
     }
 }
 
@@ -404,7 +408,7 @@ export const state$ = (
         // Check collision with top/bottom screen
         let newBirdY = birdY;
         if (birdY < 0 || birdY + Birb.HEIGHT > Viewport.CANVAS_HEIGHT) {
-            if (currentRun.length > 0) {
+            if (currentRun.length > 0 && lives > 1) {
                 ghostManager.spawnGhost([...currentRun]); // send run to ghost
                 currentRun = [];
             }
@@ -422,7 +426,7 @@ export const state$ = (
             const collision = isColliding(newBirdY, pipe);
             
             if (collision) {
-                if (currentRun.length > 0) {
+                if (currentRun.length > 0 && lives > 1) {
                     ghostManager.spawnGhost([...currentRun]); // send run to ghost
                     currentRun = [];
                 }
@@ -442,7 +446,7 @@ export const state$ = (
         // Record current Y position for ghost
         currentRun.push(newBirdY);
         // if game ended remove all ghosts
-        gameEnd ? ghostManager.removeAllGhosts() : null;
+        gameEnd ? ghostManager.removeAllGhosts(): null;
 
         // Return updated state including new position, velocity, lives, and game end bool
         return { ...state, vy, birdY: newBirdY, lives, gameEnd, score };
