@@ -168,7 +168,7 @@ return (s: State & { birdY: number }) => {
             : (() => {
                 gameOver = document.createElementNS("http://www.w3.org/2000/svg", "text");
                 gameOver.setAttribute("x", "50%");
-                gameOver.setAttribute("y", "50%");
+                gameOver.setAttribute("y", "20%");
                 gameOver.setAttribute("text-anchor", "middle");
                 gameOver.setAttribute("dominant-baseline", "middle");
                 gameOver.setAttribute("font-size", "48");
@@ -289,7 +289,6 @@ const animatePipes = (svg: SVGSVGElement) => {
 // --- Ghost Manager ---
 class GhostManager {
     private svg: SVGSVGElement;
-    private allRuns: number[][] = [];
     private ghostElems: SVGImageElement[] = [];
 
     constructor(svg: SVGSVGElement) {
@@ -310,6 +309,7 @@ class GhostManager {
             opacity: "0.5", // semi-transparent
         }) as SVGImageElement;
         this.svg.appendChild(ghostImg);
+        this.ghostElems.push(ghostImg); // <-- Track the ghost
 
         let index = 0;
         const intervalId = setInterval(() => {
@@ -329,6 +329,13 @@ class GhostManager {
             this.ghostElems.splice(index, 1);
         }
     }
+
+    removeAllGhosts() {
+        this.ghostElems.forEach(g => this.svg.removeChild(g));
+        this.ghostElems = [];
+    }
+
+    
 }
 
 // Update state
@@ -422,6 +429,8 @@ export const state$ = (
 
         // Record current Y position for ghost
         currentRun.push(newBirdY);
+
+        gameEnd ? ghostManager.removeAllGhosts() : null;
 
         // Return updated state including new position, velocity, lives, and game end bool
         return { ...state, vy, birdY: newBirdY, lives, gameEnd, score };
