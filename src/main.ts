@@ -289,7 +289,7 @@ const animatePipes = (svg: SVGSVGElement) => {
     // Return active pipes, reset function, and collision checker for state$
     return { activePipes, resetPipes, isColliding };
 };
-// --- Ghost Manager ---
+// Ghost Manager 
 class GhostManager {
     private svg: SVGSVGElement;
     private ghostElems: SVGImageElement[] = [];
@@ -315,10 +315,10 @@ class GhostManager {
         this.svg.appendChild(ghostImg);
         this.ghostElems.push(ghostImg); // Track the ghost
 
-        let index = 0;
-        const intervalId = setInterval(() => {
-            if (index >= runPositions.length) {
-                clearInterval(intervalId);
+        let index = 0; // Initialize index to track the current position in the ghost runs
+        const intervalId = setInterval(() => { // Start an interval to animate the ghost bird over time
+            if (index >= runPositions.length) { // Check if we've reached the end of the recorded run
+                clearInterval(intervalId); // if end of run, stop interval
                 
                 // Remove ghost from DOM and ghostElems array
                 const ghostIndex = this.ghostElems.indexOf(ghostImg);
@@ -338,6 +338,14 @@ class GhostManager {
         }, Constants.TICK_RATE_MS); // same tick rate as main bird
 
         this.ghostIntervals.push(intervalId); // Track interval for later clearing
+    }
+
+    // used to stop spawning the ghosts and overriding the interval
+    stopAllGhosts() {
+        this.ghostIntervals.forEach(clearInterval); // stop all interval updates
+        this.ghostIntervals = [];
+        this.ghostElems.forEach(g => g.parentNode && this.svg.removeChild(g)); // remove from DOM
+        this.ghostElems = [];
     }
 
 }
@@ -372,7 +380,7 @@ export const state$ = (
 
   const initialBirdState: State = { ...initialState, birdY: 200, vy: 0 };
 
-  // --- Ghost integration ---
+  // Ghost integration 
   const svg = document.querySelector("#svgCanvas") as SVGSVGElement;
   const ghostManager = new GhostManager(svg);
   let currentRun: number[] = [];
@@ -390,7 +398,11 @@ export const state$ = (
     return { ...initialBirdState }; // Reset bird position, velocity, lives, score, gameEnd
     }
 
-        if (state.gameEnd) return state;
+    // if game over then stop all ghost movement.
+        if (state.gameEnd) {
+            ghostManager.stopAllGhosts();
+            return state;
+        }
 
         // Determine vertical velocity based on event type
         const vy = event.type === "flap" ? event.vy
@@ -424,6 +436,7 @@ export const state$ = (
         for (const { pipe } of activePipes) {
             const collision = isColliding(newBirdY, pipe);
             
+            // collision true, then spawn ghost to follow run
             if (collision) {
                 if (currentRun.length > 0 && lives > 1) {
                     ghostManager.spawnGhost([...currentRun]); // send run to ghost
