@@ -170,11 +170,12 @@ return (s: State & { birdY: number }) => {
             gameOver.setAttribute("fill", "green");
             gameOver.textContent = "GAME OVER";
             svg.appendChild(gameOver!);
-        })())
+        })()
+    )
     : (gameOver ? (svg.removeChild(gameOver), gameOver = null) : null);
 }}
 
-// --- Pipe Types ---
+// Pipe Types
 type Pipe = {
     x: number;            // current horizontal position
     gapY: number;         // vertical start of the gap (top of gap)
@@ -337,14 +338,6 @@ class GhostManager {
         }, Constants.TICK_RATE_MS); // same tick rate as main bird
 
         this.ghostIntervals.push(intervalId); // Track interval for later clearing
-    }
-
-    removeGhost(index: number) {
-        this.ghostElems[index] ? (this.svg.removeChild(this.ghostElems[index]), this.ghostElems.splice(index, 1)) : null;
-        if (this.ghostIntervals[index]) {
-            clearInterval(this.ghostIntervals[index]);
-            this.ghostIntervals.splice(index, 1);
-        }
     }
 
 }
